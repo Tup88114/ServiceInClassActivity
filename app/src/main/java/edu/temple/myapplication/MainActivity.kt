@@ -1,21 +1,71 @@
 package edu.temple.myapplication
 
+import android.annotation.SuppressLint
+import android.content.ComponentName
+import android.content.Intent
+import android.content.ServiceConnection
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
 import android.widget.Button
+import android.widget.TextView
 
 class MainActivity : AppCompatActivity() {
+
+    lateinit var timeBinder : TimerService.TimerBinder
+    var isConnected =  false
+    lateinit var handler: Handler
+
+    val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(p0: ComponentName?, service: IBinder?) {
+            timeBinder = service as TimerService.TimerBinder
+            timeBinder.setHandler(handler)
+            isConnected = true
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            isConnected = false
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        findViewById<Button>(R.id.startButton).setOnClickListener {
+        val startButton = findViewById<Button>(R.id.startButton)
+        val stopButton = findViewById<Button>(R.id.stopButton)
+        val textView = findViewById<TextView>(R.id.textView)
 
+        handler = Handler(mainLooper) {
+            textView.text = it.what.toString()
+            true
+        }
+
+        bindService(
+            Intent(this, TimerService::class.java),
+            serviceConnection,
+            BIND_AUTO_CREATE
+        )
+
+        startButton.setOnClickListener {
+            if (isConnected) {
+                if (!timeBinder.isRunning && !timeBinder.paused) {
+                    timeBinder.start(10)
+                    startButton.text = "Pause"
+                } else {
+                    timeBinder.pause()
+                    startButton.text = if (timeBinder.paused) "Resume" else "Pause"
+                }
+            }
         }
         
-        findViewById<Button>(R.id.stopButton).setOnClickListener {
-
+        stopButton.setOnClickListener {
+            if (isConnected) {
+                timeBinder.stop()
+                startButton.text = "Start"
+                textView.text = "0"
+            }
         }
     }
 }
