@@ -1,31 +1,44 @@
 package edu.temple.myapplication
 
-import android.annotation.SuppressLint
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.os.Binder
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.Message
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
+import kotlin.concurrent.timer
 
 class MainActivity : AppCompatActivity() {
+    private var timerService: TimerService.TimerBinder? = null
+    private var isBound = false
+    private lateinit var textView: TextView
+    private val defaultValue = 20
 
-    lateinit var timeBinder : TimerService.TimerBinder
-    var isConnected =  false
-    lateinit var handler: Handler
+    private val handler = Handler(Looper.getMainLooper()) {
+            msg -> textView.text = msg.what.toString()
+        true
+    }
 
-    val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(p0: ComponentName?, service: IBinder?) {
-            timeBinder = service as TimerService.TimerBinder
-            timeBinder.setHandler(handler)
-            isConnected = true
+    private val conn = object: ServiceConnection {
+        override fun onServiceConnected(p0: ComponentName?, p1: IBinder?) {
+            timerService = p1 as TimerService.TimerBinder
+            timerService?.setHandler(handler)
+            isBound = true
         }
 
-        override fun onServiceDisconnected(name: ComponentName?) {
-            isConnected = false
+        override fun onServiceDisconnected(p0: ComponentName?) {
+            timerService = null
+            isBound = false
         }
     }
 
@@ -33,39 +46,35 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        val startButton = findViewById<Button>(R.id.startButton)
-        val stopButton = findViewById<Button>(R.id.stopButton)
-        val textView = findViewById<TextView>(R.id.textView)
-
-        handler = Handler(mainLooper) {
-            textView.text = it.what.toString()
-            true
+        textView = findViewById<TextView>(R.id.textView)
+        findViewById<Button>(R.id.startButton).setOnClickListener {
+            if(isBound) {
+                val savedValue = timerService?.getSavedValue() ?: -1
+                val startValue = if (savedValue != -1) savedValue else defaultValue
+                timerService?.start(startValue)
+            }
         }
+        findViewById<Button>(R.id.stopButton).setOnClickListener {
+            if (isBound) {
+                timerService?.pause()
+            }
+        }
+    }
 
+    override fun onStart() {
+        super.onStart()
         bindService(
             Intent(this, TimerService::class.java),
-            serviceConnection,
-            BIND_AUTO_CREATE
+            conn,
+            Context.BIND_AUTO_CREATE
         )
+    }
 
-        startButton.setOnClickListener {
-            if (isConnected) {
-                if (!timeBinder.isRunning && !timeBinder.paused) {
-                    timeBinder.start(10)
-                    startButton.text = "Pause"
-                } else {
-                    timeBinder.pause()
-                    startButton.text = if (timeBinder.paused) "Resume" else "Pause"
-                }
-            }
+    override fun onStop() {
+        super.onStop()
+        if(isBound) {
+            unbindService(conn)
         }
-        
-        stopButton.setOnClickListener {
-            if (isConnected) {
-                timeBinder.stop()
-                startButton.text = "Start"
-                textView.text = "0"
-            }
-        }
+        isBound = false
     }
 }
